@@ -1,0 +1,31 @@
+[project]
+name = "radio-idp"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "XotEmBotZ", email = "xotembotzop@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "cupy-cuda13x[ctk]>=14.2.0",
+    "dask>=2026.8.0",
+    "gdm-xarray-jax",
+    "h5netcdf>=1.8.1",
+    "h5py>=3.16.0",
+    "jax[cuda13]>=0.11.2",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "pandas>=3.0.6",
+    "scipy>=1.18.1",
+]
+
+[project.scripts]
+radio-idp = "radio_idp:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.sources]
+gdm-xarray-jax = { git = "https://github.com/google-deepmind/xarray_jax" }
