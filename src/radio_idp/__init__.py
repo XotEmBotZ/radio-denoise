@@ -45,6 +45,8 @@ from radio_idp.dataset import (
     StreamingBurstGenerator,
     load_validation_bursts,
 )
+from radio_idp.train_stage1 import Stage1TrainConfig, train_stage1
+from radio_idp.train_stage2 import Stage2TrainConfig, train_stage2
 
 __all__ = [
     "generate_data",
@@ -86,4 +88,8 @@ __all__ = [
     "generate_training_batch",
     "StreamingBurstGenerator",
     "load_validation_bursts",
+    "train_stage1",
+    "Stage1TrainConfig",
+    "train_stage2",
+    "Stage2TrainConfig",
 ]
