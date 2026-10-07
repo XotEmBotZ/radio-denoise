@@ -10,3 +10,10 @@ wheels/
 .venv
 radioml2018/
 radioml2018*
+
+# Jupyter Checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Data files
+data/
