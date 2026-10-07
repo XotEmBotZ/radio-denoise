@@ -31,6 +31,20 @@ from radio_idp.inversion import (
     invert_multipath_fading,
     deterministic_denoise_pipeline,
 )
+from radio_idp.dataset import (
+    PARAM_NAMES,
+    LOWER_BOUNDS,
+    UPPER_BOUNDS,
+    TrainingBatch,
+    init_sobol_table,
+    sample_parameters_sobol,
+    perturb_parameters,
+    generate_single_burst,
+    invert_burst,
+    generate_training_batch,
+    StreamingBurstGenerator,
+    load_validation_bursts,
+)
 
 __all__ = [
     "generate_data",
@@ -60,4 +74,16 @@ __all__ = [
     "invert_hpa_rapp",
     "invert_multipath_fading",
     "deterministic_denoise_pipeline",
+    "PARAM_NAMES",
+    "LOWER_BOUNDS",
+    "UPPER_BOUNDS",
+    "TrainingBatch",
+    "init_sobol_table",
+    "sample_parameters_sobol",
+    "perturb_parameters",
+    "generate_single_burst",
+    "invert_burst",
+    "generate_training_batch",
+    "StreamingBurstGenerator",
+    "load_validation_bursts",
 ]
