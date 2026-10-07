@@ -47,6 +47,7 @@ from radio_idp.dataset import (
 )
 from radio_idp.train_stage1 import Stage1TrainConfig, train_stage1
 from radio_idp.train_stage2 import Stage2TrainConfig, train_stage2
+from radio_idp.benchmark import BenchmarkConfig, run_benchmark
 
 __all__ = [
     "generate_data",
@@ -92,4 +93,6 @@ __all__ = [
     "Stage1TrainConfig",
     "train_stage2",
     "Stage2TrainConfig",
+    "BenchmarkConfig",
+    "run_benchmark",
 ]
