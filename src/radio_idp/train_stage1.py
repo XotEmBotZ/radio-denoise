@@ -15,9 +15,11 @@ import radio_idp
 from radio_idp.dataset import (
     LOWER_BOUNDS,
     PARAM_NAMES,
-    StreamingBurstGenerator,
     UPPER_BOUNDS,
+    generate_single_burst,
+    init_sobol_table,
     load_validation_bursts,
+    sample_parameters_sobol,
 )
 from radio_idp.utils.checkpoint import ModelCheckpointManager
 from radio_idp.utils.logger import ExperimentLogger
@@ -43,10 +45,6 @@ class Stage1TrainConfig:
     seed: int = 42
     sobol_points: int = 2**18
 
-
-def complex_to_real_channels(symbols: jax.Array) -> jax.Array:
-    """Stack real and imaginary parts of complex symbols into last dimension."""
-    return jnp.stack([symbols.real, symbols.imag], axis=-1)
 
 
 def stage1_loss_fn(
@@ -76,7 +74,7 @@ def stage1_train_step(
 def evaluate_stage1(
     model: nnx.Module,
     val_data: dict[str, np.ndarray],
-    batch_size: int = 256,
+    batch_size: int = 16,
 ) -> dict[str, float]:
     """Evaluate Stage 1 parameter estimator against validation dataset."""
     rx_full = val_data["rx_full"]
@@ -91,7 +89,7 @@ def evaluate_stage1(
 
     for i in range(0, num_samples, batch_size):
         batch_rx = rx_full[i : i + batch_size]
-        x_in = complex_to_real_channels(jnp.array(batch_rx))
+        x_in = jax.vmap(radio_idp.extract_features)(jnp.array(batch_rx))
         pred_theta = predict_batch(model, x_in)
         all_preds.append(np.array(pred_theta))
 
@@ -146,43 +144,77 @@ def train_stage1(
     )
     optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
 
-    # Setup on-the-fly streaming generator
-    constellation = radio_idp.get_qpsk_constellation()
-    generator = StreamingBurstGenerator(
-        seed=config.seed,
-        constellation=constellation,
-        batch_size=config.batch_size,
-        sample_len=config.sample_len,
-        sobol_points=config.sobol_points,
-    )
+    # Setup on-the-fly streaming generator configurations
+    constellation = radio_idp.get_qam_constellation(4)
+    m_power = int(np.log2(config.sobol_points))
+    sobol_table = init_sobol_table(m_power=m_power, seed=config.seed)
+    
+    graphdef, state = nnx.split((model, optimizer))
+    
+    @jax.jit
+    def train_chunk(state, key, key_idx):
+        def step_fn(carry, step_key):
+            state_val, k_idx = carry
+            k_batch, k_idx_new = jax.random.split(k_idx)
+            
+            indices = jax.random.randint(
+                k_batch, shape=(config.batch_size,), minval=0, maxval=config.sobol_points
+            )
+            k_sobol, k_bursts = jax.random.split(step_key)
+            theta = sample_parameters_sobol(k_sobol, sobol_table, indices)
+            
+            batch_keys = jax.random.split(k_bursts, config.batch_size)
+            _, _, rx_full, _, _ = jax.vmap(
+                generate_single_burst, in_axes=(0, 0, None, None)
+            )(batch_keys, theta, constellation, config.sample_len)
+            
+            x_in = jax.vmap(radio_idp.extract_features)(rx_full)
+            target = (theta - LOWER_BOUNDS) / (UPPER_BOUNDS - LOWER_BOUNDS)
+            
+            m, opt = nnx.merge(graphdef, state_val)
+            def loss_fn(m_local):
+                pred = m_local(x_in)
+                return jnp.mean((pred - target) ** 2)
+                
+            loss, grads = nnx.value_and_grad(loss_fn)(m)
+            opt.update(m, grads)
+            
+            _, new_state = nnx.split((m, opt))
+            return (new_state, k_idx_new), loss
+            
+        keys = jax.random.split(key, 50)
+        (final_state, final_k_idx), losses = jax.lax.scan(step_fn, (state, key_idx), keys)
+        return final_state, final_k_idx, jnp.mean(losses)
 
     # Load validation data slice
     val_data = load_validation_bursts(config.val_file, max_bursts=config.val_bursts)
 
     best_nrmse = float("inf")
-    pbar = tqdm(range(1, config.num_steps + 1), desc="Stage 1 Training")
+    pbar = tqdm(range(0, config.num_steps, 50), desc="Stage 1 Training (Chunks)")
+    
+    key = jax.random.key(config.seed)
+    key_idx = jax.random.key(config.seed + 1)
 
-    for step in pbar:
-        batch = next(generator)
-        x_in = complex_to_real_channels(batch.rx_full)
-        theta_norm_target = (batch.theta - LOWER_BOUNDS) / (UPPER_BOUNDS - LOWER_BOUNDS)
+    for step_start in pbar:
+        key, subkey = jax.random.split(key)
+        state, key_idx, avg_loss = train_chunk(state, subkey, key_idx)
+        loss_val = float(avg_loss)
+        
+        current_step = step_start + 50
+        
+        logger.log_metrics(current_step, {"loss": loss_val}, prefix="train")
+        pbar.set_postfix({"train_loss": f"{loss_val:.5f}"})
 
-        loss = stage1_train_step(model, optimizer, x_in, theta_norm_target)
-        loss_val = float(loss)
-
-        if step % 50 == 0:
-            logger.log_metrics(step, {"loss": loss_val}, prefix="train")
-            pbar.set_postfix({"train_loss": f"{loss_val:.5f}"})
-
-        if step % config.val_interval == 0 or step == config.num_steps:
+        if current_step % config.val_interval == 0 or current_step == config.num_steps:
+            nnx.update((model, optimizer), state)
             val_metrics = evaluate_stage1(model, val_data)
-            logger.log_metrics(step, val_metrics, prefix="val")
+            logger.log_metrics(current_step, val_metrics, prefix="val")
             nrmse_mean = val_metrics.get("nrmse/mean", float("inf"))
 
             if nrmse_mean < best_nrmse:
                 best_nrmse = nrmse_mean
                 checkpoint_mgr.save(
-                    step,
+                    current_step,
                     model,
                     opt_state=optimizer,
                     extra_metadata={"val_nrmse": best_nrmse},

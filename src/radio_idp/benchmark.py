@@ -164,7 +164,7 @@ def run_benchmark(
 
             # 1. Deterministic inversion: either via Stage 1 model or ground-truth params
             if stage1_model is not None:
-                x_in = complex_to_real_channels(batch_rx)
+                x_in = jax.vmap(radio_idp.extract_features)(batch_rx)
                 pred_u = stage1_model(x_in)
                 theta_est = LOWER_BOUNDS + pred_u * (UPPER_BOUNDS - LOWER_BOUNDS)
                 rx_cleaned = jax.vmap(invert_burst, in_axes=(0, 0, None))(

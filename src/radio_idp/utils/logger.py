@@ -57,6 +57,7 @@ class ExperimentLogger:
 
         self._jsonl_file.write(json.dumps(json_record) + "\n")
         self._jsonl_file.flush()
+        self.writer.flush()
 
     def flush(self) -> None:
         """Flush buffer contents to disk."""
